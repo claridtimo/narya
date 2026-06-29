@@ -1320,6 +1320,27 @@ public abstract class PeerManager
     }
 
     /**
+     * Sets the {@link SSLContext} that {@link PeerNode}s use to wrap their connections to other
+     * nodes in TLS. When the cluster's client port is TLS-enabled, peer connections (which connect
+     * to that same port) must also speak TLS; this is the client-side (pinned-truststore) context
+     * the peer node installs on its client before logon. Null (the default) leaves peer connections
+     * plaintext. Set this before peers are discovered/connected.
+     */
+    public void setPeerClientContext (javax.net.ssl.SSLContext ctx)
+    {
+        _peerClientContext = ctx;
+    }
+
+    /**
+     * Returns the {@link SSLContext} peer nodes use to wrap connections to other nodes, or null if
+     * peer connections are plaintext.
+     */
+    public javax.net.ssl.SSLContext getPeerClientContext ()
+    {
+        return _peerClientContext;
+    }
+
+    /**
      * Creates credentials that a {@link PeerNode} can use to authenticate with another node.
      */
     protected PeerCreds createCreds ()
@@ -1812,6 +1833,9 @@ public abstract class PeerManager
     protected String _nodeName;
     protected String _sharedSecret;
     protected NodeRecord _self;
+
+    /** TLS context peer nodes use when connecting to other nodes, or null for plaintext peering. */
+    protected javax.net.ssl.SSLContext _peerClientContext;
     protected NodeObject _nodeobj;
     protected String _nodeNamespace;
     protected Map<String,PeerNode> _peers = Maps.newHashMap();
