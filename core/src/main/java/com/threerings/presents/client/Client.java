@@ -8,6 +8,8 @@ package com.threerings.presents.client;
 import java.security.PublicKey;
 import java.util.HashSet;
 
+import javax.net.ssl.SSLContext;
+
 import com.google.common.collect.Sets;
 
 import com.samskivert.util.Interval;
@@ -218,6 +220,26 @@ public class Client
     public boolean setPublicKey (String key)
     {
         return key == null ? false : setPublicKey(SecureUtil.stringToRSAPublicKey(key));
+    }
+
+    /**
+     * Returns the {@link SSLContext} used to wrap the connection to the server in full-session TLS,
+     * or null if TLS is not enabled.
+     */
+    public SSLContext getSSLContext ()
+    {
+        return _sslContext;
+    }
+
+    /**
+     * Sets the {@link SSLContext} used to wrap the entire connection to the server in TLS. When set
+     * (non-null), the communicator wraps its socket in a client TLS channel before authenticating;
+     * when null (the default) the connection remains plaintext and behaves exactly as before. TLS
+     * is strictly opt-in. This must be set before any call to <code>logon</code>.
+     */
+    public void setSSLContext (SSLContext ctx)
+    {
+        _sslContext = ctx;
     }
 
     /**
@@ -1060,6 +1082,9 @@ public class Client
 
     /** Our public key. */
     protected PublicKey _publicKey;
+
+    /** The TLS context used to wrap our connection to the server, or null if TLS is disabled. */
+    protected SSLContext _sslContext;
 
     /** Our session secret key. */
     protected byte[] _secret;

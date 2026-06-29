@@ -17,6 +17,8 @@ import java.nio.channels.SocketChannel;
 
 import java.security.PrivateKey;
 
+import javax.net.ssl.SSLContext;
+
 import com.google.common.collect.Lists;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
@@ -191,6 +193,34 @@ public class PresentsConnectionManager extends ConnectionManager
     public PrivateKey getPrivateKey ()
     {
         return _privateKey;
+    }
+
+    /**
+     * Sets the {@link SSLContext} used to wrap accepted client connections in full-session TLS. If
+     * this is null (the default) connections remain plaintext and behave exactly as before; TLS is
+     * strictly opt-in. This must be set before the connection manager starts accepting sockets.
+     */
+    public void setSSLContext (SSLContext ctx)
+    {
+        _sslContext = ctx;
+    }
+
+    /**
+     * Returns the {@link SSLContext} used to wrap accepted connections in TLS, or null if TLS is
+     * not enabled.
+     */
+    public SSLContext getSSLContext ()
+    {
+        return _sslContext;
+    }
+
+    /**
+     * Returns true if full-session TLS is enabled on this connection manager (i.e. an
+     * {@link SSLContext} has been injected).
+     */
+    public boolean isTlsEnabled ()
+    {
+        return _sslContext != null;
     }
 
     /**
@@ -475,7 +505,25 @@ public class PresentsConnectionManager extends ConnectionManager
     @Override
     protected void handleAcceptedSocket (SocketChannel channel)
     {
-        handleAcceptedSocket(channel, new AuthingConnection());
+        AuthingConnection conn = new AuthingConnection();
+        // the super implementation configures the channel non-blocking, inits the connection and
+        // registers it for OP_READ; afterwards the connection's io channel is the raw socket
+        handleAcceptedSocket(channel, conn);
+
+        // if TLS is enabled, wrap the (now non-blocking) raw channel in a server-side TLS channel
+        // and install it as the connection's io channel before any read or write happens. This
+        // must happen here, after init+registration, so the AuthingConnection's very first frame is
+        // read through the TLS channel and the handshake is driven transparently
+        if (_sslContext != null && !conn.isClosed()) {
+            try {
+                tlschannel.ServerTlsChannel tlsChannel =
+                    tlschannel.ServerTlsChannel.newBuilder(channel, _sslContext).build();
+                conn.setIoChannel(tlsChannel);
+            } catch (Exception e) {
+                log.warning("Failed to wrap accepted socket in TLS", "channel", channel, e);
+                conn.close();
+            }
+        }
     }
 
     /**
@@ -492,6 +540,12 @@ public class PresentsConnectionManager extends ConnectionManager
                 PresentsConnection rconn = new PresentsConnection();
                 rconn.init(this, conn.getChannel(), iterStamp);
                 rconn.selkey = conn.selkey;
+
+                // carry over the io channel from the authing connection: if TLS is enabled this is
+                // the TLS channel with an established session, and the running connection must keep
+                // using it rather than reverting to the raw (plaintext) socket that init() defaults
+                // to. For plaintext connections this is just the raw socket channel (a no-op).
+                rconn.setIoChannel(conn.getIoChannel());
 
                 // we need to keep using the same object input and output streams from the
                 // beginning of the session because they have context that needs to be preserved
@@ -606,6 +660,9 @@ public class PresentsConnectionManager extends ConnectionManager
     @Inject(optional=true) protected Authenticator _author = new DummyAuthenticator();
     protected List<ChainedAuthenticator> _authors = Lists.newArrayList();
     protected PrivateKey _privateKey;
+
+    /** The TLS context used to wrap accepted connections, or null if TLS is disabled. */
+    protected SSLContext _sslContext;
 
     protected Queue<AuthingConnection> _authq = Queue.newQueue();
     protected Queue<Tuple<Connection, InetSocketAddress>> _connectq = Queue.newQueue();

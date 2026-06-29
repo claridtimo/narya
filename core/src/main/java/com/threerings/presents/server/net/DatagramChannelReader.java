@@ -42,6 +42,17 @@ public class DatagramChannelReader
 
     public void bind()
     {
+        // fail closed: we have no DTLS, so binding datagram ports while the TCP session is
+        // TLS-encrypted would silently send these datagrams in plaintext, defeating the point of
+        // TLS. Refuse to bind rather than create that footgun. (Bang passes zero datagram ports, so
+        // this guard never triggers today; it prevents a future regression.)
+        if (_datagramPorts.length > 0 && _conMan.isTlsEnabled()) {
+            log.error("Refusing to bind datagram ports while TLS is enabled: UDP datagrams are " +
+                      "not encrypted (no DTLS) and must not run alongside the encrypted TLS " +
+                      "session.", "ports", _datagramPorts.length);
+            return;
+        }
+
         for (int port : _datagramPorts) {
             try {
                 acceptDatagrams(port);
