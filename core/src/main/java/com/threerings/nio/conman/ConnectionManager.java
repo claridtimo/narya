@@ -29,6 +29,9 @@ import com.samskivert.util.Tuple;
 
 import com.threerings.nio.SelectorIterable;
 
+import tlschannel.NeedsReadException;
+import tlschannel.NeedsWriteException;
+
 import static com.threerings.NaryaLog.log;
 
 /**
@@ -378,8 +381,10 @@ public abstract class ConnectionManager extends LoopingThread
                 return false;
             }
 
-            // then write the data to the socket
-            int wrote = sochan.write(_outbuf);
+            // then write the data to the io channel (the raw socket for plaintext connections, or
+            // the TLS-wrapping channel when TLS is enabled); the connection-pending guard above
+            // still uses the raw socket channel
+            int wrote = conn.getIoChannel().write(_outbuf);
             noteWrite(1, wrote);
 
             // if we didn't write our entire message, deal with the leftover bytes
@@ -387,6 +392,18 @@ public abstract class ConnectionManager extends LoopingThread
                 fully = false;
                 pwh.handlePartialWrite(conn, _outbuf);
             }
+
+        } catch (NeedsWriteException nwe) {
+            // the TLS layer couldn't flush all its bytes to the socket right now; treat this just
+            // like a partial write and stash the remainder in the overflow queue for the next tick
+            fully = false;
+            pwh.handlePartialWrite(conn, _outbuf);
+
+        } catch (NeedsReadException nre) {
+            // the TLS layer needs inbound bytes (handshake) before it can write; treat as a partial
+            // write. OP_READ is always set so the inbound data will arrive and the next tick retries
+            fully = false;
+            pwh.handlePartialWrite(conn, _outbuf);
 
         } catch (NotYetConnectedException nyce) {
             // this should be caught by isConnectionPending() but awesomely it's not
@@ -537,8 +554,18 @@ public abstract class ConnectionManager extends LoopingThread
                     return false; // not ready to write to this connection yet
                 }
 
-                // write all we can of our partial buffer
-                int wrote = sochan.write(_partial);
+                // write all we can of our partial buffer through the io channel (raw socket for
+                // plaintext, TLS-wrapping channel when TLS is enabled)
+                int wrote;
+                try {
+                    wrote = conn.getIoChannel().write(_partial);
+                } catch (NeedsWriteException nwe) {
+                    // TLS can't flush right now; leave the partial for the next tick
+                    return false;
+                } catch (NeedsReadException nre) {
+                    // TLS needs inbound handshake bytes first; leave the partial for the next tick
+                    return false;
+                }
                 noteWrite(0, wrote);
 
                 if (_partial.remaining() == 0) {

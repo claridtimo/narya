@@ -12,7 +12,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.ByteChannel;
 import java.nio.channels.DatagramChannel;
+import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -29,6 +31,9 @@ import com.threerings.presents.util.DatagramSequencer;
 
 import com.threerings.nio.conman.Connection;
 import com.threerings.nio.conman.ConnectionManager;
+
+import tlschannel.NeedsReadException;
+import tlschannel.NeedsWriteException;
 
 import static com.threerings.presents.Log.log;
 
@@ -207,9 +212,14 @@ public class PresentsConnection extends Connection
                 }
             }
 
+            // read frames through the io channel: the raw socket for plaintext connections, or the
+            // TLS-wrapping channel when TLS is enabled (which decrypts and drives the handshake)
+            ByteChannel ioChannel = getIoChannel();
+            boolean tls = (ioChannel != _channel);
+
             // there may be more than one frame in the buffer, so we keep reading them until we run
             // out of data
-            while (_fin.readFrame(_channel)) {
+            while (_fin.readFrame(ioChannel)) {
                 // make a note of how many bytes are in this frame (including the frame length
                 // bytes which aren't reported in available())
                 bytesIn = _fin.available() + 4;
@@ -219,6 +229,28 @@ public class PresentsConnection extends Connection
 //                 Log.info("Read message " + msg + ".");
                 _handler.handleMessage(msg);
             }
+
+            // we read all we could without the TLS layer asking us to write; if we previously set
+            // OP_WRITE to flush a pending handshake write, clear it again so we don't spin (OP_READ
+            // always stays set). No-op for plaintext connections, which never touch OP_WRITE.
+            if (tls && selkey != null && (selkey.interestOps() & SelectionKey.OP_WRITE) != 0) {
+                selkey.interestOps(selkey.interestOps() & ~SelectionKey.OP_WRITE);
+            }
+
+        } catch (NeedsReadException nre) {
+            // the TLS layer has no complete frame for us yet (or the handshake needs more inbound
+            // bytes); stop reading this turn. The key stays OP_READ so the next readable event
+            // resumes us. Return whatever whole frames we managed to read above.
+            return bytesIn;
+
+        } catch (NeedsWriteException nwe) {
+            // the TLS layer needs to write (handshake) but the socket isn't writable right now; add
+            // OP_WRITE interest so handleEvent is re-invoked when writable (processIncomingEvents
+            // dispatches on any ready key), at which point our read pump flushes the handshake write
+            if (selkey != null) {
+                selkey.interestOps(selkey.interestOps() | SelectionKey.OP_WRITE);
+            }
+            return bytesIn;
 
         } catch (EOFException eofe) {
             // close down the socket gracefully

@@ -140,6 +140,9 @@ public class PeerNode
 
         // otherwise configure our client with the right bits and logon
         _client.setCredentials(_peermgr.createCreds());
+        // if the cluster's client port is TLS-enabled, peer connections must speak TLS too;
+        // null (plaintext peering) is a no-op (see PeerManager.setPeerClientContext)
+        _client.setSSLContext(_peermgr.getPeerClientContext());
         _client.setServer(hostName, new int[] { _record.port });
         _client.logon();
         _lastConnectStamp = System.currentTimeMillis();

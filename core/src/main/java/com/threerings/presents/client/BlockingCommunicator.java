@@ -14,6 +14,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousCloseException;
+import java.nio.channels.ByteChannel;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -21,6 +22,8 @@ import java.nio.channels.SocketChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
+
+import javax.net.ssl.SSLContext;
 
 import com.samskivert.util.LoopingThread;
 import com.samskivert.util.Queue;
@@ -289,6 +292,17 @@ public class BlockingCommunicator extends Communicator
         if (_channel != null) {
             log.debug("Closing socket channel.");
 
+            // if we wrapped the socket in a TLS channel, close it first (best effort) so it can
+            // emit its close_notify; closing the raw channel afterward is idempotent
+            if (_ioChannel != null && _ioChannel != _channel) {
+                try {
+                    _ioChannel.close();
+                } catch (IOException ioe) {
+                    // best effort; we're tearing down anyway
+                }
+            }
+            _ioChannel = null;
+
             try {
                 _channel.close();
             } catch (IOException ioe) {
@@ -407,7 +421,9 @@ public class BlockingCommunicator extends Communicator
     protected int writeMessage (ByteBuffer buf)
         throws IOException
     {
-        return _channel.write(buf);
+        // write through the io channel: the raw socket for plaintext, or the TLS channel when TLS
+        // is enabled. In blocking mode the TLS channel drives the handshake and blocks transparently
+        return _ioChannel.write(buf);
     }
 
     /**
@@ -502,7 +518,9 @@ public class BlockingCommunicator extends Communicator
     protected boolean readFrame ()
         throws IOException
     {
-        return _fin.readFrame(_channel);
+        // read through the io channel: the raw socket for plaintext, or the TLS channel when TLS is
+        // enabled (which decrypts and drives the handshake transparently in blocking mode)
+        return _fin.readFrame(_ioChannel);
     }
 
     /**
@@ -663,6 +681,18 @@ public class BlockingCommunicator extends Communicator
             openChannel(host);
             _channel.configureBlocking(true);
             _channel.socket().setKeepAlive(true);
+
+            // if a TLS context was injected, wrap the connected (blocking) socket in a client TLS
+            // channel; the handshake is driven transparently on the first read/write. Otherwise we
+            // do plaintext I/O directly on the raw socket, exactly as before. Both the Reader and
+            // Writer threads use this same instance: the reader only reads and the writer only
+            // writes, which is the one-unwrap + one-wrap concurrency that tls-channel allows.
+            SSLContext sslContext = _client.getSSLContext();
+            if (sslContext != null) {
+                _ioChannel = tlschannel.ClientTlsChannel.newBuilder(_channel, sslContext).build();
+            } else {
+                _ioChannel = _channel;
+            }
 
             // our messages are framed (preceded by their length), so we use these helper streams
             // to manage the framing
@@ -1008,6 +1038,11 @@ public class BlockingCommunicator extends Communicator
     protected DatagramWriter _datagramWriter;
 
     protected SocketChannel _channel;
+
+    /** The channel through which we do application I/O: the raw {@link #_channel} for plaintext, or
+     * a TLS-wrapping channel when TLS is enabled. Shared by the reader and writer threads. */
+    protected ByteChannel _ioChannel;
+
     protected Queue<UpstreamMessage> _msgq = new Queue<UpstreamMessage>();
 
     protected Selector _selector;

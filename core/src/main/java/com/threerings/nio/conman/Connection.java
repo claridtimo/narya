@@ -9,6 +9,7 @@ import static com.threerings.NaryaLog.log;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.nio.channels.ByteChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 
@@ -33,6 +34,9 @@ public abstract class Connection implements NetEventHandler
     {
         _cmgr = cmgr;
         _channel = channel;
+        // by default we do plaintext I/O directly on the raw socket channel; if TLS is enabled
+        // a TLS-wrapping ByteChannel will be installed via setIoChannel() before any I/O happens
+        _ioChannel = channel;
         _lastEvent = createStamp;
         _connectionId = ++_lastConnectionId;
     }
@@ -51,6 +55,26 @@ public abstract class Connection implements NetEventHandler
     public SocketChannel getChannel ()
     {
         return _channel;
+    }
+
+    /**
+     * Returns the byte channel through which application data should be read and written. This is
+     * the raw socket channel for plaintext connections, or a TLS-wrapping channel when TLS is
+     * enabled. Selector registration, connection-pending checks and close still operate on the raw
+     * {@link #getChannel} socket channel.
+     */
+    public ByteChannel getIoChannel ()
+    {
+        return _ioChannel;
+    }
+
+    /**
+     * Installs the byte channel through which application data is read and written. Used to wrap
+     * the raw socket channel with a TLS channel when TLS is enabled.
+     */
+    public void setIoChannel (ByteChannel ioChannel)
+    {
+        _ioChannel = ioChannel;
     }
 
     /**
@@ -163,6 +187,16 @@ public abstract class Connection implements NetEventHandler
         }
 
         log.debug("Closing channel " + this + ".");
+        // if we wrapped the raw socket in a TLS channel, close it first (best effort) so it can
+        // emit its close_notify; closing the raw channel afterward is idempotent
+        if (_ioChannel != null && _ioChannel != _channel) {
+            try {
+                _ioChannel.close();
+            } catch (IOException ioe) {
+                // best effort; we're tearing down anyway
+            }
+        }
+        _ioChannel = null;
         try {
             _channel.close();
         } catch (IOException ioe) {
@@ -175,6 +209,10 @@ public abstract class Connection implements NetEventHandler
 
     protected ConnectionManager _cmgr;
     protected SocketChannel _channel;
+
+    /** The channel through which we do application I/O. Defaults to {@link #_channel} (plaintext);
+     * replaced with a TLS-wrapping channel when TLS is enabled. */
+    protected ByteChannel _ioChannel;
 
     protected long _lastEvent;
 
