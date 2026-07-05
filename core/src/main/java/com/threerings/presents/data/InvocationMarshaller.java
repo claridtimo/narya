@@ -7,7 +7,9 @@ package com.threerings.presents.data;
 
 import java.io.IOException;
 
+import com.threerings.io.GenStreamUtil;
 import com.threerings.io.ObjectInputStream;
+import com.threerings.io.ObjectOutputStream;
 import com.threerings.io.Streamable;
 
 import com.threerings.presents.client.Client;
@@ -244,15 +246,35 @@ public class InvocationMarshaller<T extends ClientObject>
     }
 
     /**
-     * A custom reader method for {@link Streamable}.
+     * A custom reader method for {@link Streamable}. Reads {@code _invOid}/{@code _invCode}
+     * explicitly (by name, in declaration order) rather than via {@code defaultReadObject()} so the
+     * field order is deterministic across ART and HotSpot (Epic A1 Phase 5, approach b) — byte
+     * identical to the old reflective read. Marshaller SUBCLASSES intentionally have NO generated
+     * read/writeObject (they are field-free) so they inherit this method, which also performs the
+     * side-effect the generated flatten-mode streamers would otherwise skip: binding {@link #_invdir}
+     * from the stream's client. That binding is the whole reason this is a hand-written custom
+     * reader; a subclass overriding it would leave {@code _invdir} null and NPE on the first request.
      */
     public void readObject (ObjectInputStream in)
         throws IOException, ClassNotFoundException
     {
-        in.defaultReadObject();
+        GenStreamUtil.readField(InvocationMarshaller.class, "_invOid", this, in);
+        GenStreamUtil.readField(InvocationMarshaller.class, "_invCode", this, in);
         if (in instanceof ClientObjectInputStream) {
             _invdir = ((ClientObjectInputStream)in).client.getInvocationDirector();
         }
+    }
+
+    /**
+     * A custom writer method for {@link Streamable}; mirrors {@link #readObject} (explicit,
+     * deterministic field order) so field-free marshaller subclasses inherit it. Byte identical to
+     * the previous reflective default write.
+     */
+    public void writeObject (ObjectOutputStream out)
+        throws IOException
+    {
+        GenStreamUtil.writeField(InvocationMarshaller.class, "_invOid", this, out);
+        GenStreamUtil.writeField(InvocationMarshaller.class, "_invCode", this, out);
     }
 
     @Override
