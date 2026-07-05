@@ -63,7 +63,7 @@ public class PingRequest extends UpstreamMessage
         // network
         _packStamp = System.currentTimeMillis();
 
-        out.defaultWriteObject();
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.UpstreamMessage.class, "messageId", this, out);
     }
 
     /**
@@ -76,7 +76,7 @@ public class PingRequest extends UpstreamMessage
         // the network
         _unpackStamp = System.currentTimeMillis();
 
-        in.defaultReadObject();
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.UpstreamMessage.class, "messageId", this, in);
     }
 
     @Override

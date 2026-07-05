@@ -45,4 +45,24 @@ public class FailureResponse extends DownstreamMessage
 
     protected int _oid;
     protected String _message;
+
+    // AUTO-GENERATED: METHODS START
+    // from interface Streamable
+    public void readObject (com.threerings.io.ObjectInputStream ins)
+        throws java.io.IOException, java.lang.ClassNotFoundException
+    {
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.DownstreamMessage.class, "messageId", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.FailureResponse.class, "_oid", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.FailureResponse.class, "_message", this, ins);
+    }
+
+    // from interface Streamable
+    public void writeObject (com.threerings.io.ObjectOutputStream out)
+        throws java.io.IOException
+    {
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.DownstreamMessage.class, "messageId", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.FailureResponse.class, "_oid", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.FailureResponse.class, "_message", this, out);
+    }
+    // AUTO-GENERATED: METHODS END
 }

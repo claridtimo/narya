@@ -412,5 +412,5 @@ public class ObjectInputStream extends DataInputStream
     protected static volatile List<String> _allowedPrefixes;
 
     /** Used to activate verbose debug logging. */
-    protected static final boolean STREAM_DEBUG = false;
+    protected static final boolean STREAM_DEBUG = Boolean.getBoolean("com.threerings.io.streamDebug");
 }

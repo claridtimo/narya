@@ -113,7 +113,11 @@ public class AESAuthRequest extends AuthRequest
     public void writeObject (ObjectOutputStream out)
         throws IOException
     {
-        out.defaultWriteObject();
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.UpstreamMessage.class, "messageId", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.AuthRequest.class, "_creds", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.AuthRequest.class, "_version", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.AuthRequest.class, "_zone", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.AuthRequest.class, "_bootGroups", this, out);
         ByteArrayOutputStream byteOut = new ByteArrayOutputStream();
         ObjectOutputStream oOut = new ObjectOutputStream(byteOut);
         oOut.writeObject(_clearCreds);
@@ -136,7 +140,11 @@ public class AESAuthRequest extends AuthRequest
     public void readObject (ObjectInputStream in)
         throws IOException, ClassNotFoundException
     {
-        in.defaultReadObject();
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.UpstreamMessage.class, "messageId", this, in);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.AuthRequest.class, "_creds", this, in);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.AuthRequest.class, "_version", this, in);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.AuthRequest.class, "_zone", this, in);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.AuthRequest.class, "_bootGroups", this, in);
         _contents = new byte[in.readInt()];
         in.read(_contents);
     }

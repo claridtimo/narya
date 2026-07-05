@@ -83,7 +83,9 @@ public class PongResponse extends DownstreamMessage
             _processDelay = (int)(_packStamp - _pingStamp);
         }
 
-        out.defaultWriteObject();
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.DownstreamMessage.class, "messageId", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.PongResponse.class, "_packStamp", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.PongResponse.class, "_processDelay", this, out);
     }
 
     /**
@@ -96,7 +98,9 @@ public class PongResponse extends DownstreamMessage
         // the network
         _unpackStamp = System.currentTimeMillis();
 
-        in.defaultReadObject();
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.DownstreamMessage.class, "messageId", this, in);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.PongResponse.class, "_packStamp", this, in);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.PongResponse.class, "_processDelay", this, in);
     }
 
     @Override

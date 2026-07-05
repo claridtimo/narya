@@ -109,4 +109,24 @@ public class EntryRemovedEvent<T extends DSet.Entry> extends EntryEvent<T>
 
     @SuppressWarnings("unchecked")
     protected transient T _oldEntry = (T)UNSET_OLD_ENTRY;
+
+    // AUTO-GENERATED: METHODS START
+    // from interface Streamable
+    public void readObject (com.threerings.io.ObjectInputStream ins)
+        throws java.io.IOException, java.lang.ClassNotFoundException
+    {
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.DEvent.class, "_toid", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.NamedEvent.class, "_name", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.EntryRemovedEvent.class, "_key", this, ins);
+    }
+
+    // from interface Streamable
+    public void writeObject (com.threerings.io.ObjectOutputStream out)
+        throws java.io.IOException
+    {
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.DEvent.class, "_toid", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.NamedEvent.class, "_name", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.EntryRemovedEvent.class, "_key", this, out);
+    }
+    // AUTO-GENERATED: METHODS END
 }

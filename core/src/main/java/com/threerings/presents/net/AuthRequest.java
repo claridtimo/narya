@@ -89,7 +89,11 @@ public class AuthRequest extends UpstreamMessage
         throws IOException, ClassNotFoundException
     {
         try {
-            in.defaultReadObject();
+            com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.UpstreamMessage.class, "messageId", this, in);
+            com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.AuthRequest.class, "_creds", this, in);
+            com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.AuthRequest.class, "_version", this, in);
+            com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.AuthRequest.class, "_zone", this, in);
+            com.threerings.io.GenStreamUtil.readField(com.threerings.presents.net.AuthRequest.class, "_bootGroups", this, in);
         } catch (IOException ioe) {
             // if we fail here because the client is old, leave ourselves with a partially
             // initialized set of credentials, which the server will generally cope with by telling
@@ -108,4 +112,17 @@ public class AuthRequest extends UpstreamMessage
 
     /** The set of bootstrap service groups this client is interested in. */
     protected String[] _bootGroups;
+
+    // AUTO-GENERATED: METHODS START
+    // from interface Streamable
+    public void writeObject (com.threerings.io.ObjectOutputStream out)
+        throws java.io.IOException
+    {
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.UpstreamMessage.class, "messageId", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.AuthRequest.class, "_creds", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.AuthRequest.class, "_version", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.AuthRequest.class, "_zone", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.net.AuthRequest.class, "_bootGroups", this, out);
+    }
+    // AUTO-GENERATED: METHODS END
 }

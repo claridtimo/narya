@@ -107,4 +107,24 @@ public class EntryAddedEvent<T extends DSet.Entry> extends EntryEvent<T>
     /** Used when this event is generated on the authoritative server where object changes are made
      * immediately. This lets us know not to apply ourselves when we're actually dispatched. */
     protected transient boolean _alreadyApplied;
+
+    // AUTO-GENERATED: METHODS START
+    // from interface Streamable
+    public void readObject (com.threerings.io.ObjectInputStream ins)
+        throws java.io.IOException, java.lang.ClassNotFoundException
+    {
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.DEvent.class, "_toid", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.NamedEvent.class, "_name", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.EntryAddedEvent.class, "_entry", this, ins);
+    }
+
+    // from interface Streamable
+    public void writeObject (com.threerings.io.ObjectOutputStream out)
+        throws java.io.IOException
+    {
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.DEvent.class, "_toid", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.NamedEvent.class, "_name", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.EntryAddedEvent.class, "_entry", this, out);
+    }
+    // AUTO-GENERATED: METHODS END
 }

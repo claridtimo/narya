@@ -6,16 +6,24 @@
 package com.threerings.presents.tools;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 
 import org.apache.tools.ant.DirectoryScanner;
 import org.apache.tools.ant.types.FileSet;
 
 import com.google.common.collect.Lists;
 
+import com.samskivert.util.ClassUtil;
+
+import com.threerings.io.NotStreamable;
 import com.threerings.io.Streamable;
 
 import com.threerings.presents.dobj.DObject;
@@ -34,6 +42,21 @@ public class GenStreamableTask extends GenTask
     @Override
     public void addFileset(FileSet set) {
         _filesets.add(set);
+    }
+
+    /**
+     * If set, generate <em>self-contained</em> declaration-ordered {@code read/writeObject} methods
+     * that stream the entire flattened field set (in {@link ClassUtil#getFields} order, captured on
+     * HotSpot at build time) via {@link com.threerings.io.GenStreamUtil}, rather than the legacy
+     * per-class {@code super.read/writeObject(...)} + local-fields form. In this mode {@link DObject}
+     * subclasses are processed too, and a pass-through {@code readObject}/{@code writeObject} (one
+     * that calls {@code defaultReadObject}/{@code defaultWriteObject}) has that call replaced in
+     * place with the explicit field streaming (preserving any surrounding logic). This is what makes
+     * Streamables deterministic on ART (Android) while staying byte-identical on HotSpot. See {@link
+     * com.threerings.io.GenStreamUtil}.
+     */
+    public void setFlatten (boolean flatten) {
+        _flatten = flatten;
     }
 
     @Override
@@ -86,6 +109,11 @@ public class GenStreamableTask extends GenTask
     protected void processClass (File source, Class<?> sclass)
         throws IOException
     {
+        if (_flatten) {
+            processFlatten(source, sclass);
+            return;
+        }
+
         StreamableClassRequirements reqs = new StreamableClassRequirements(sclass);
         // we must implement Streamable, not be a DObject and have some fields that need to be
         // streamed
@@ -144,6 +172,164 @@ public class GenStreamableTask extends GenTask
         writeFile(source.getAbsolutePath(), sfile.generate(null, methods.toString()));
     }
 
+    /**
+     * "Flatten" mode: emit self-contained declaration-ordered {@code read/writeObject} that stream
+     * the whole {@link ClassUtil#getFields} field set via {@link com.threerings.io.GenStreamUtil}.
+     * Handles {@link DObject}s and replaces pass-through {@code default*Object()} calls in place.
+     */
+    protected void processFlatten (File source, Class<?> sclass)
+        throws IOException
+    {
+        // must be a concrete Streamable; never instrument abstract bases (their concrete subclasses
+        // stream the full flattened field set themselves, so an abstract base carrying a read/write
+        // method would "poison" any subclass that didn't get its own — silently dropping fields)
+        if (!Streamable.class.isAssignableFrom(sclass) || sclass.isInterface() ||
+                sclass.isEnum() || Modifier.isAbstract(sclass.getModifiers())) {
+            return;
+        }
+
+        // gather the streamed fields in the exact order the reflective streamer uses (superclass
+        // first, then this class's declared fields), skipping @NotStreamable and closure refs
+        List<Field> fields = Lists.newArrayList();
+        for (Field field : ClassUtil.getFields(sclass)) {
+            if (field.getAnnotation(NotStreamable.class) != null) {
+                continue;
+            }
+            if (field.isSynthetic() && field.getName().startsWith("this$")) {
+                continue;
+            }
+            fields.add(field);
+        }
+        if (fields.isEmpty()) {
+            return;
+        }
+
+        String src = new String(Files.readAllBytes(source.toPath()));
+
+        boolean hasRead = src.contains("public void readObject");
+        boolean hasWrite = src.contains("public void writeObject");
+        boolean hasReadDefault = DEFAULT_READ.matcher(src).find();
+        boolean hasWriteDefault = DEFAULT_WRITE.matcher(src).find();
+
+        // if either method is hand-written custom streaming (present, but NOT a defaultXObject
+        // pass-through), the class fully manages its own streaming and is already deterministic;
+        // leave it entirely alone rather than risk a generated/hand-written mismatch
+        if ((hasRead && !hasReadDefault) || (hasWrite && !hasWriteDefault)) {
+            return;
+        }
+
+        // build whole methods for any streaming direction that has no method at all
+        StringBuilder methods = new StringBuilder();
+        if (!hasRead) {
+            methods.append(FLAT_READ_OPEN);
+            for (Field field : fields) {
+                methods.append("        ").append(flatReadStatement(field, "ins")).append("\n");
+            }
+            methods.append(READ_CLOSE);
+        }
+        if (!hasWrite) {
+            if (methods.length() > 0) {
+                methods.append("\n");
+            }
+            methods.append(FLAT_WRITE_OPEN);
+            for (Field field : fields) {
+                methods.append("        ").append(flatWriteStatement(field, "out")).append("\n");
+            }
+            methods.append(WRITE_CLOSE);
+        }
+
+        boolean changed = false;
+        // replace a pass-through default read/write call in place, preserving surrounding logic
+        if (hasReadDefault) {
+            src = substituteDefault(src, DEFAULT_READ, fields, true);
+            changed = true;
+        }
+        if (hasWriteDefault) {
+            src = substituteDefault(src, DEFAULT_WRITE, fields, false);
+            changed = true;
+        }
+        // insert whole methods just before the class-closing brace, so we NEVER disturb the
+        // "// AUTO-GENERATED: METHODS" section (which holds the gendobj/genservice accessors) —
+        // SourceFile.generate() would replace that section wholesale and drop the accessors
+        if (methods.length() > 0) {
+            src = insertBeforeClassClose(src, methods.toString());
+            changed = true;
+        }
+        if (changed) {
+            System.err.println("Converting (flatten) " + sclass.getName() + "...");
+            writeFile(source.getAbsolutePath(), src);
+        }
+    }
+
+    /**
+     * Inserts {@code methods} (already 4-space indented, newline-terminated) just before the final
+     * top-level class-closing brace of {@code src}.
+     */
+    protected String insertBeforeClassClose (String src, String methods)
+    {
+        String[] lines = src.split("\n", -1);
+        int lastBrace = -1;
+        for (int ii = 0; ii < lines.length; ii++) {
+            if (lines[ii].trim().equals("}")) {
+                lastBrace = ii;
+            }
+        }
+        if (lastBrace < 0) {
+            throw new RuntimeException("No class-closing brace found");
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int ii = 0; ii < lines.length; ii++) {
+            if (ii == lastBrace) {
+                sb.append("\n").append(methods);
+            }
+            sb.append(lines[ii]);
+            if (ii < lines.length - 1) {
+                sb.append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Replaces the single {@code recv.defaultReadObject()} / {@code recv.defaultWriteObject()}
+     * statement matched by {@code pat} with an explicit, same-indentation block that streams every
+     * field via {@link com.threerings.io.GenStreamUtil}, reusing the receiver variable name.
+     */
+    protected String substituteDefault (String src, Pattern pat, List<Field> fields, boolean read)
+    {
+        Matcher m = pat.matcher(src);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String indent = m.group(1), recv = m.group(2);
+            StringBuilder block = new StringBuilder();
+            for (int ii = 0; ii < fields.size(); ii++) {
+                if (ii > 0) {
+                    block.append("\n");
+                }
+                Field field = fields.get(ii);
+                block.append(indent).append(
+                    read ? flatReadStatement(field, recv) : flatWriteStatement(field, recv));
+            }
+            m.appendReplacement(sb, Matcher.quoteReplacement(block.toString()));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    protected String flatReadStatement (Field field, String recv)
+    {
+        return "com.threerings.io.GenStreamUtil.readField(" +
+            field.getDeclaringClass().getCanonicalName() + ".class, \"" + field.getName() +
+            "\", this, " + recv + ");";
+    }
+
+    protected String flatWriteStatement (Field field, String recv)
+    {
+        return "com.threerings.io.GenStreamUtil.writeField(" +
+            field.getDeclaringClass().getCanonicalName() + ".class, \"" + field.getName() +
+            "\", this, " + recv + ");";
+    }
+
     protected String toReadObject (Field field)
     {
         Class<?> type = field.getType();
@@ -196,6 +382,9 @@ public class GenStreamableTask extends GenTask
     /** A list of filesets that contain tile images. */
     protected ArrayList<FileSet> _filesets = Lists.newArrayList();
 
+    /** Whether to generate self-contained flattened methods (Android/ART support). */
+    protected boolean _flatten;
+
     protected static final String READ_OPEN =
         "    // from interface Streamable\n" +
         "    public void readObject (ObjectInputStream ins)\n" +
@@ -209,4 +398,23 @@ public class GenStreamableTask extends GenTask
         "        throws IOException\n" +
         "    {\n";
     protected static final String WRITE_CLOSE = "    }\n";
+
+    // fully-qualified signatures for flatten mode so no imports are required in the target file
+    protected static final String FLAT_READ_OPEN =
+        "    // from interface Streamable\n" +
+        "    public void readObject (com.threerings.io.ObjectInputStream ins)\n" +
+        "        throws java.io.IOException, java.lang.ClassNotFoundException\n" +
+        "    {\n";
+    protected static final String FLAT_WRITE_OPEN =
+        "    // from interface Streamable\n" +
+        "    public void writeObject (com.threerings.io.ObjectOutputStream out)\n" +
+        "        throws java.io.IOException\n" +
+        "    {\n";
+
+    /** Matches a pass-through {@code recv.defaultReadObject();} statement (captures indent, recv). */
+    protected static final Pattern DEFAULT_READ =
+        Pattern.compile("(?m)^([ \\t]*)(\\w+)\\.defaultReadObject\\s*\\(\\s*\\)\\s*;[ \\t]*$");
+    /** Matches a pass-through {@code recv.defaultWriteObject();} statement. */
+    protected static final Pattern DEFAULT_WRITE =
+        Pattern.compile("(?m)^([ \\t]*)(\\w+)\\.defaultWriteObject\\s*\\(\\s*\\)\\s*;[ \\t]*$");
 }

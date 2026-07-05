@@ -88,4 +88,26 @@ public class InvocationResponseEvent extends DEvent
 
     /** The arguments to the method being invoked. */
     protected Object[] _args;
+
+    // AUTO-GENERATED: METHODS START
+    // from interface Streamable
+    public void readObject (com.threerings.io.ObjectInputStream ins)
+        throws java.io.IOException, java.lang.ClassNotFoundException
+    {
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.DEvent.class, "_toid", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.InvocationResponseEvent.class, "_requestId", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.InvocationResponseEvent.class, "_methodId", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.InvocationResponseEvent.class, "_args", this, ins);
+    }
+
+    // from interface Streamable
+    public void writeObject (com.threerings.io.ObjectOutputStream out)
+        throws java.io.IOException
+    {
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.DEvent.class, "_toid", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.InvocationResponseEvent.class, "_requestId", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.InvocationResponseEvent.class, "_methodId", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.InvocationResponseEvent.class, "_args", this, out);
+    }
+    // AUTO-GENERATED: METHODS END
 }
