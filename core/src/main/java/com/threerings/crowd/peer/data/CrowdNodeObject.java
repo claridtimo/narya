@@ -101,4 +101,38 @@ public class CrowdNodeObject extends NodeObject
         this.hostedChannels = clone;
     }
     // AUTO-GENERATED: METHODS END
+
+    // from interface Streamable
+    public void readObject (com.threerings.io.ObjectInputStream ins)
+        throws java.io.IOException, java.lang.ClassNotFoundException
+    {
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.DObject.class, "_oid", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.peer.data.NodeObject.class, "nodeName", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.peer.data.NodeObject.class, "bootStamp", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.peer.data.NodeObject.class, "peerService", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.peer.data.NodeObject.class, "clients", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.peer.data.NodeObject.class, "locks", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.peer.data.NodeObject.class, "acquiringLock", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.peer.data.NodeObject.class, "releasingLock", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.peer.data.NodeObject.class, "cacheData", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.crowd.peer.data.CrowdNodeObject.class, "crowdPeerService", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.crowd.peer.data.CrowdNodeObject.class, "hostedChannels", this, ins);
+    }
+
+    // from interface Streamable
+    public void writeObject (com.threerings.io.ObjectOutputStream out)
+        throws java.io.IOException
+    {
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.DObject.class, "_oid", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.peer.data.NodeObject.class, "nodeName", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.peer.data.NodeObject.class, "bootStamp", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.peer.data.NodeObject.class, "peerService", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.peer.data.NodeObject.class, "clients", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.peer.data.NodeObject.class, "locks", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.peer.data.NodeObject.class, "acquiringLock", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.peer.data.NodeObject.class, "releasingLock", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.peer.data.NodeObject.class, "cacheData", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.crowd.peer.data.CrowdNodeObject.class, "crowdPeerService", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.crowd.peer.data.CrowdNodeObject.class, "hostedChannels", this, out);
+    }
 }

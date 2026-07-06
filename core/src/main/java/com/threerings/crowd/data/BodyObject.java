@@ -237,4 +237,28 @@ public class BodyObject extends ClientObject
 
     /** The default (no tokens) access control. */
     protected static final TokenRing EMPTY_TOKENS = new TokenRing(0);
+
+    // from interface Streamable
+    public void readObject (com.threerings.io.ObjectInputStream ins)
+        throws java.io.IOException, java.lang.ClassNotFoundException
+    {
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.DObject.class, "_oid", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.data.ClientObject.class, "username", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.data.ClientObject.class, "receivers", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.crowd.data.BodyObject.class, "location", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.crowd.data.BodyObject.class, "status", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.crowd.data.BodyObject.class, "awayMessage", this, ins);
+    }
+
+    // from interface Streamable
+    public void writeObject (com.threerings.io.ObjectOutputStream out)
+        throws java.io.IOException
+    {
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.DObject.class, "_oid", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.data.ClientObject.class, "username", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.data.ClientObject.class, "receivers", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.crowd.data.BodyObject.class, "location", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.crowd.data.BodyObject.class, "status", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.crowd.data.BodyObject.class, "awayMessage", this, out);
+    }
 }

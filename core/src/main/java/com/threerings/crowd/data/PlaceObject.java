@@ -236,4 +236,24 @@ public class PlaceObject extends DObject
         this.speakService = value;
     }
     // AUTO-GENERATED: METHODS END
+
+    // from interface Streamable
+    public void readObject (com.threerings.io.ObjectInputStream ins)
+        throws java.io.IOException, java.lang.ClassNotFoundException
+    {
+        com.threerings.io.GenStreamUtil.readField(com.threerings.presents.dobj.DObject.class, "_oid", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.crowd.data.PlaceObject.class, "occupants", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.crowd.data.PlaceObject.class, "occupantInfo", this, ins);
+        com.threerings.io.GenStreamUtil.readField(com.threerings.crowd.data.PlaceObject.class, "speakService", this, ins);
+    }
+
+    // from interface Streamable
+    public void writeObject (com.threerings.io.ObjectOutputStream out)
+        throws java.io.IOException
+    {
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.presents.dobj.DObject.class, "_oid", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.crowd.data.PlaceObject.class, "occupants", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.crowd.data.PlaceObject.class, "occupantInfo", this, out);
+        com.threerings.io.GenStreamUtil.writeField(com.threerings.crowd.data.PlaceObject.class, "speakService", this, out);
+    }
 }
