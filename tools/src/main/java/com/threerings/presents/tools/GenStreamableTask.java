@@ -62,13 +62,25 @@ public class GenStreamableTask extends GenTask
     @Override
     public void execute ()
     {
+        // pre-scan: collect every top-level class name covered by the filesets, so the
+        // post-regen hierarchy model (willDeclare) knows which ancestors this run can generate
+        // methods for
+        List<File> sources = Lists.newArrayList();
         for (FileSet fs : _filesets) {
             DirectoryScanner ds = fs.getDirectoryScanner(getProject());
             File fromDir = fs.getDir(getProject());
-            String[] srcFiles = ds.getIncludedFiles();
-            for (String srcFile : srcFiles) {
-                processClass(new File(fromDir, srcFile));
+            for (String srcFile : ds.getIncludedFiles()) {
+                File source = new File(fromDir, srcFile);
+                sources.add(source);
+                try {
+                    _filesetClasses.add(GenUtil.readClassName(source));
+                } catch (Exception e) {
+                    System.err.println("Failed to parse " + source + ": " + e.getMessage());
+                }
             }
+        }
+        for (File source : sources) {
+            processClass(source);
         }
     }
 
@@ -225,16 +237,7 @@ public class GenStreamableTask extends GenTask
 
         // gather the streamed fields in the exact order the reflective streamer uses (superclass
         // first, then this class's declared fields), skipping @NotStreamable and closure refs
-        List<Field> fields = Lists.newArrayList();
-        for (Field field : ClassUtil.getFields(sclass)) {
-            if (field.getAnnotation(NotStreamable.class) != null) {
-                continue;
-            }
-            if (field.isSynthetic() && field.getName().startsWith("this$")) {
-                continue;
-            }
-            fields.add(field);
-        }
+        List<Field> fields = streamedFields(sclass);
 
         // detection and substitution look only at THIS class's body, with any nested member class
         // bodies blanked out (space-padded, so offsets in the masked text map 1:1 onto src)
@@ -253,12 +256,12 @@ public class GenStreamableTask extends GenTask
             return src;
         }
 
-        // if either method is hand-written custom streaming (present, but NOT a defaultXObject
-        // pass-through), the class fully manages its own streaming and is already deterministic;
-        // leave it entirely alone rather than risk a generated/hand-written mismatch
-        if ((hasRead && !hasReadDefault) || (hasWrite && !hasWriteDefault)) {
-            return src;
-        }
+        // a hand-written custom method (present, but NOT a defaultXObject pass-through) already
+        // manages that DIRECTION's streaming deterministically — leave it alone. The skip is
+        // per-side, not per-class: Prop has a custom readObject but no writeObject at all, and
+        // its write side still needs the generated method (both because legacy reflective writes
+        // must become explicit, and because willDeclare models sides independently — subclasses
+        // emit super.writeObject against it)
 
         // an ancestor that declares its own read/writeObject is the class's streaming "base": a
         // generated method here must super-call it (preserving its side effects — Prop.init(),
@@ -502,27 +505,85 @@ public class GenStreamableTask extends GenTask
     }
 
     /**
-     * Returns the nearest strict ancestor of {@code sclass} that declares the given streaming
-     * method, or null. Such an ancestor is a safe super-call target because flatten mode
-     * guarantees its method streams exactly the ancestor's own flattened prefix: hand-written
-     * methods with a {@code default*Object()} pass-through get it substituted in place (abstract
-     * classes included — see {@link #processFlattenClass}), and generated methods are explicit by
-     * construction. REQUIREMENT: every Streamable ancestor's source must be covered by this
-     * task's filesets (or already be prefix-exact, like narya's own InvocationMarshaller) — an
-     * out-of-fileset ancestor whose method still calls the reflective pass-through would read the
-     * full dynamic-class field set and double-read the subclass tail.
+     * Returns the nearest strict ancestor of {@code sclass} that will declare the given streaming
+     * method AFTER this run's regeneration, or null. This must model the POST-regen hierarchy —
+     * not the classes being reflected on (which were compiled from stripped sources): javac binds
+     * the emitted {@code super.readObject(ins)} to the nearest declaration in the FINAL sources,
+     * so computing the tail against a farther ancestor double-streams every field an intermediate
+     * generated method covers (found the hard way: CargoTank extends Counter extends Prop —
+     * Counter regenerates a method covering {@code count}, so a CargoTank tail computed against
+     * Prop read {@code count} twice and desynced every persisted .board file).
+     *
+     * An ancestor declares the method post-regen iff (a) it declares it now (hand-written custom,
+     * or a pass-through frame that substitution rewrites in place — abstract classes included), or
+     * (b) it is a concrete in-fileset Streamable whose own post-regen tail is nonempty, i.e. this
+     * run generates one for it (recursive, memoized). Ancestors OUTSIDE the task's filesets never
+     * have methods generated, so (b) additionally requires fileset membership. Any such ancestor
+     * is a safe super-call target: its method streams exactly the ancestor's own flattened prefix.
      */
     protected Class<?> findStreamMethodAncestor (Class<?> sclass, String name, Class<?> arg)
     {
         for (Class<?> c = sclass.getSuperclass(); c != null; c = c.getSuperclass()) {
-            try {
-                c.getDeclaredMethod(name, arg);
+            if (willDeclare(c, name, arg)) {
                 return c;
-            } catch (NoSuchMethodException nsme) {
-                // keep walking
             }
         }
         return null;
+    }
+
+    /** Whether {@code c} will declare the given streaming method once regeneration completes. */
+    protected boolean willDeclare (Class<?> c, String name, Class<?> arg)
+    {
+        String key = c.getName() + "#" + name;
+        Boolean cached = _willDeclare.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        boolean result;
+        try {
+            c.getDeclaredMethod(name, arg);
+            result = true; // declares it in (stripped) source or a dependency jar
+        } catch (NoSuchMethodException nsme) {
+            if (!Streamable.class.isAssignableFrom(c) || c.isInterface() || c.isEnum() ||
+                    Modifier.isAbstract(c.getModifiers()) || !inFilesets(c)) {
+                result = false; // never generated for these
+            } else {
+                // will get a generated method iff its own tail (below ITS post-regen ancestor,
+                // recursively) is nonempty
+                result = !fieldsBelow(streamedFields(c),
+                    findStreamMethodAncestor(c, name, arg)).isEmpty();
+            }
+        }
+        _willDeclare.put(key, result);
+        return result;
+    }
+
+    /** Whether {@code c}'s source is covered by this task's filesets (nested classes count via
+     * their outermost enclosing class's file). */
+    protected boolean inFilesets (Class<?> c)
+    {
+        Class<?> outer = c;
+        while (outer.getEnclosingClass() != null) {
+            outer = outer.getEnclosingClass();
+        }
+        return _filesetClasses.contains(outer.getName());
+    }
+
+    /** Gathers the streamed fields of {@code sclass} in reflective-streamer order (superclass
+     * first), skipping {@code @NotStreamable} and closure refs. */
+    protected static List<Field> streamedFields (Class<?> sclass)
+    {
+        List<Field> fields = Lists.newArrayList();
+        for (Field field : ClassUtil.getFields(sclass)) {
+            if (field.getAnnotation(NotStreamable.class) != null) {
+                continue;
+            }
+            if (field.isSynthetic() && field.getName().startsWith("this$")) {
+                continue;
+            }
+            fields.add(field);
+        }
+        return fields;
     }
 
     /** Returns the subset of {@code fields} declared strictly below {@code ancestor} (all of
@@ -610,6 +671,12 @@ public class GenStreamableTask extends GenTask
 
     /** Whether to generate self-contained flattened methods (Android/ART support). */
     protected boolean _flatten;
+
+    /** Top-level class names covered by the filesets (see {@link #inFilesets}). */
+    protected java.util.Set<String> _filesetClasses = new java.util.HashSet<String>();
+
+    /** Memo for {@link #willDeclare} ("classname#methodname" → will it declare post-regen). */
+    protected java.util.Map<String, Boolean> _willDeclare = new java.util.HashMap<String, Boolean>();
 
     protected static final String READ_OPEN =
         "    // from interface Streamable\n" +
