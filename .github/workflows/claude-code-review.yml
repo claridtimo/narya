@@ -28,9 +28,6 @@ jobs:
           # by the plan (no metered API charge). Set the CLAUDE_CODE_OAUTH_TOKEN
           # secret on this repo (Settings > Secrets and variables > Actions).
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # TEMPORARY (debug-review-auth): surface the SDK error that is failing
-          # instantly on this repo; remove before merging anything real.
-          show_full_output: true
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
