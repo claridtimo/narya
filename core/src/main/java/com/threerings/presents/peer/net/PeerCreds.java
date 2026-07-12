@@ -5,7 +5,7 @@
 
 package com.threerings.presents.peer.net;
 
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -198,5 +198,5 @@ public class PeerCreds extends ServiceCreds
     protected static final SecureRandom RANDOM = new SecureRandom();
 
     /** The charset used to turn strings into HMAC input bytes. */
-    protected static final Charset UTF8 = Charset.forName("UTF-8");
+    protected static final java.nio.charset.Charset UTF8 = StandardCharsets.UTF_8;
 }

@@ -93,6 +93,25 @@ public class PeerAuthTest
     }
 
     @Test
+    public void testNonceRememberedForEntireTokenLifetime ()
+    {
+        // Regression for a one-instant replay gap: verify() accepts a token for the *inclusive*
+        // window [T-skew, T+skew], so its maximum lifetime is 2*skew. PeerManager therefore sizes
+        // the cache at 2*skew+1 (see PeerManager.init) so a nonce first seen at the earliest legal
+        // instant is still remembered at the latest one, instead of being pruned exactly then and
+        // letting a single replay through. With the old 2*skew retention the final assertion below
+        // would fail (the entry is pruned at now == 2*skew).
+        long skew = 1000L;
+        PeerNonceCache cache = new PeerNonceCache(2 * skew + 1); // as PeerManager builds it
+        byte[] nonce = new byte[] { 4, 2 };
+        assertTrue("first sighting (T-skew) accepted", cache.noteNonce("nodeA", nonce, 0L));
+        assertFalse("replay at the last valid instant (T+skew, i.e. 2*skew later) still rejected",
+                    cache.noteNonce("nodeA", nonce, 2 * skew));
+        assertTrue("nonce reusable once the token can no longer verify",
+                   cache.noteNonce("nodeA", nonce, 2 * skew + 1));
+    }
+
+    @Test
     public void testWeakSecretRejected ()
     {
         assertRejected(null);

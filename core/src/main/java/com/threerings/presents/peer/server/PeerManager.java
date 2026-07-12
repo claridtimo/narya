@@ -344,9 +344,12 @@ public abstract class PeerManager
         _sharedSecret = sharedSecret;
         _nodeNamespace = nodeNamespace;
         _adHoc = adHoc;
-        // remember nonces for twice the freshness window: that is the longest a single token can
-        // remain valid, so it is the shortest retention that reliably catches replays
-        _nonceCache = new PeerNonceCache(2 * _peerAuthSkewMillis);
+        // A token stamped at T is accepted by verify() for any verifier-clock in the *inclusive*
+        // window [T - skew, T + skew], so its maximum lifetime is 2*skew. We must remember its
+        // nonce for strictly longer than that, otherwise a nonce first seen at T - skew would be
+        // pruned at exactly T + skew — the last instant the token still verifies — letting a
+        // single replay through. The +1ms margin makes the retention strictly exceed max validity.
+        _nonceCache = new PeerNonceCache(2 * _peerAuthSkewMillis + 1);
 
         // wire ourselves into the server
         _conmgr.addChainedAuthenticator(

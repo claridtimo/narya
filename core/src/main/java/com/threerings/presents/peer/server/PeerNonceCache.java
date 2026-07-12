@@ -23,16 +23,19 @@ import com.samskivert.util.StringUtil;
  * and the operator's threat model is a captured token being replayed against the node it was
  * originally sent to.
  *
- * <p>Entries are retained for twice the freshness window, which is the longest a single token can
- * remain valid (a token stamped at T is accepted by any verifier whose clock reads T +/- skew), and
- * are pruned lazily on each insertion. Access is synchronized because authentication may be
- * processed off the connection manager's threads.
+ * <p>Entries are retained for strictly longer than twice the freshness window. A token stamped at
+ * T is accepted by any verifier whose clock reads T +/- skew, so its maximum lifetime is 2*skew;
+ * retaining a nonce for strictly more than that guarantees the replay record still exists at the
+ * last instant the token would otherwise verify. Entries are pruned lazily on each insertion.
+ * Access is synchronized because authentication may be processed off the connection manager's
+ * threads.
  */
 class PeerNonceCache
 {
     /**
-     * @param ttlMillis how long to remember a nonce; should be at least twice the freshness window
-     * used when verifying credentials.
+     * @param ttlMillis how long to remember a nonce; should strictly exceed twice the freshness
+     * window used when verifying credentials, so a nonce cannot be pruned while its token still
+     * verifies.
      */
     PeerNonceCache (long ttlMillis)
     {
