@@ -65,7 +65,8 @@ public class PeerTestGroup
             this.servers.add(server);
 
             PeerManager peermgr = inj.getInstance(PeerManager.class);
-            peermgr.init(nodename, "I has a s3cr3t!", "localhost", "localhost", port);
+            // must be >= PeerManager.MIN_SHARED_SECRET_LENGTH characters
+            peermgr.init(nodename, "peer-test-shared-secret", "localhost", "localhost", port);
         }
     }
 
