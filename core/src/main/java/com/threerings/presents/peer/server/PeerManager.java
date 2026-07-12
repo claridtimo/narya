@@ -399,13 +399,26 @@ public abstract class PeerManager
     /**
      * Returns true if the supplied peer credentials are authentic: their nonce'd HMAC verifies
      * against our shared secret within the freshness window, and their nonce has not already been
-     * used within that window (replay protection). The HMAC/freshness check runs first so that a
-     * bogus request cannot cause us to record (and thus spend memory on) an attacker-chosen nonce.
+     * used within that window (replay protection).
      */
     public boolean isAuthenticPeer (PeerCreds creds)
     {
-        return creds.verify(_sharedSecret, _peerAuthSkewMillis) &&
-            _nonceCache.noteNonce(creds.clientId, creds.nonce, System.currentTimeMillis());
+        return isAuthenticPeer(
+            creds, _sharedSecret, _peerAuthSkewMillis, _nonceCache, System.currentTimeMillis());
+    }
+
+    /**
+     * The workhorse behind {@link #isAuthenticPeer(PeerCreds)}, factored out (with explicit
+     * collaborators and clock) so its ordering guarantee can be unit tested. The HMAC/freshness
+     * check runs <em>first</em> so that a bogus request cannot cause us to record (and thus spend
+     * memory on, or later falsely reject) an attacker-chosen nonce; only credentials that verify
+     * consume their nonce.
+     */
+    protected static boolean isAuthenticPeer (
+        PeerCreds creds, String sharedSecret, long skewMillis, PeerNonceCache nonceCache, long now)
+    {
+        return creds.verify(sharedSecret, skewMillis) &&
+            nonceCache.noteNonce(creds.clientId, creds.nonce, now);
     }
 
     /**

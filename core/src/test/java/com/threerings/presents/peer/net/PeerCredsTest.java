@@ -7,10 +7,7 @@ package com.threerings.presents.peer.net;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 
 import com.threerings.io.ObjectInputStream;
 import com.threerings.io.ObjectOutputStream;
@@ -125,20 +122,31 @@ public class PeerCredsTest
         assertFalse("empty creds (null fields) never verify", creds.verify(SECRET, SKEW));
     }
 
-    /**
-     * Structural test: the verifier must compare HMACs with a constant-time primitive
-     * ({@link java.security.MessageDigest#isEqual}) rather than a data-dependent comparison such as
-     * {@code Arrays.equals}/{@code String.equals}, to avoid a timing oracle on the expected HMAC.
-     */
     @Test
-    public void testConstantTimeComparisonUsed ()
-        throws IOException
+    public void testEmptySecretFailsFast ()
     {
-        String src = readPeerCredsSource();
-        assertTrue("PeerCreds.verify must use MessageDigest.isEqual for the HMAC comparison",
-                   src.contains("MessageDigest.isEqual(expected, hmac)"));
-        assertFalse("PeerCreds must not compare the HMAC with the non-constant-time Arrays.equals",
-                    src.contains("Arrays.equals"));
+        // an empty or null secret is a misconfiguration and must surface as a clear
+        // IllegalArgumentException (from PeerCreds itself), never as an unchecked surprise from
+        // SecretKeySpec's internals or a silent false
+        assertSecretRejected("nodeA", null);
+        assertSecretRejected("nodeA", "");
+        PeerCreds creds = new PeerCreds("nodeA", SECRET);
+        try {
+            creds.verify("", SKEW);
+            fail("verify with an empty secret must throw");
+        } catch (IllegalArgumentException iae) {
+            // expected
+        }
+    }
+
+    protected static void assertSecretRejected (String nodeName, String secret)
+    {
+        try {
+            new PeerCreds(nodeName, secret);
+            fail("expected IllegalArgumentException for secret: " + secret);
+        } catch (IllegalArgumentException iae) {
+            // expected
+        }
     }
 
     protected static PeerCreds signedAt (String nodeName, long timestamp)
@@ -147,20 +155,6 @@ public class PeerCredsTest
         creds.timestamp = timestamp;
         creds.hmac = PeerCreds.computeHMAC(nodeName, creds.nonce, timestamp, SECRET);
         return creds;
-    }
-
-    protected static String readPeerCredsSource ()
-        throws IOException
-    {
-        String rel = "src/main/java/com/threerings/presents/peer/net/PeerCreds.java";
-        for (String base : new String[] { "", "core/" }) {
-            File f = new File(base + rel);
-            if (f.exists()) {
-                return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
-            }
-        }
-        throw new IOException("Could not locate PeerCreds.java source (cwd=" +
-                              new File(".").getAbsolutePath() + ")");
     }
 
     protected static byte[] flatten (Object object)

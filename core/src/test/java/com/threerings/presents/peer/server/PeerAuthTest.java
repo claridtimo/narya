@@ -5,15 +5,55 @@
 
 package com.threerings.presents.peer.server;
 
+import com.threerings.presents.peer.net.PeerCreds;
+
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 /**
- * Tests the server-side pieces of peer authentication: nonce replay rejection
- * ({@link PeerNonceCache}) and the weak-secret guard ({@link PeerManager#checkPeerSecret}).
+ * Tests the server-side pieces of peer authentication: the full
+ * {@link PeerManager#isAuthenticPeer} check (HMAC verification plus replay rejection, and their
+ * ordering), nonce replay rejection ({@link PeerNonceCache}) and the weak-secret guard
+ * ({@link PeerManager#checkPeerSecret}).
  */
 public class PeerAuthTest
 {
+    public static final String SECRET = "peer-test-shared-secret";
+    public static final long SKEW = PeerCreds.DEFAULT_SKEW_MILLIS;
+
+    @Test
+    public void testIsAuthenticPeerAcceptsOnceThenRejectsReplay ()
+    {
+        PeerNonceCache cache = new PeerNonceCache(2 * SKEW);
+        PeerCreds creds = new PeerCreds("nodeA", SECRET);
+        long now = System.currentTimeMillis();
+        assertTrue("valid creds accepted on first presentation",
+                   PeerManager.isAuthenticPeer(creds, SECRET, SKEW, cache, now));
+        assertFalse("byte-identical replay of the same creds rejected",
+                    PeerManager.isAuthenticPeer(creds, SECRET, SKEW, cache, now + 10));
+        assertTrue("a fresh set of creds from the same node is accepted",
+                   PeerManager.isAuthenticPeer(new PeerCreds("nodeA", SECRET),
+                                               SECRET, SKEW, cache, now + 20));
+    }
+
+    @Test
+    public void testFailedVerifyDoesNotConsumeNonce ()
+    {
+        // the HMAC/freshness check must short-circuit BEFORE the nonce is recorded: an attacker
+        // presenting a bogus request must not be able to pollute the replay cache and thereby
+        // block the legitimate presentation of the same nonce
+        PeerNonceCache cache = new PeerNonceCache(2 * SKEW);
+        PeerCreds creds = new PeerCreds("nodeA", SECRET);
+        long now = System.currentTimeMillis();
+        creds.hmac[0] ^= 0x01; // tamper: verify() will fail
+        assertFalse("tampered creds rejected",
+                    PeerManager.isAuthenticPeer(creds, SECRET, SKEW, cache, now));
+        assertEquals("failed attempt must not record the nonce", 0, cache.size());
+        creds.hmac[0] ^= 0x01; // restore the genuine HMAC
+        assertTrue("the same nonce still succeeds once the creds verify",
+                   PeerManager.isAuthenticPeer(creds, SECRET, SKEW, cache, now + 10));
+    }
+
     @Test
     public void testNonceReplayRejected ()
     {

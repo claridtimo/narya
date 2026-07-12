@@ -61,6 +61,8 @@ public class PeerCreds extends ServiceCreds
 
     /**
      * Creates signed credentials for the specified node using the supplied shared secret.
+     *
+     * @throws IllegalArgumentException if {@code sharedSecret} is null or empty.
      */
     public PeerCreds (String nodeName, String sharedSecret)
     {
@@ -88,6 +90,8 @@ public class PeerCreds extends ServiceCreds
      *
      * @return true only if the HMAC recomputes correctly and the timestamp is within
      * {@code skewMillis} of now.
+     * @throws IllegalArgumentException if {@code sharedSecret} is null or empty (a verifier
+     * misconfiguration, distinct from the creds simply being invalid).
      */
     public boolean verify (String sharedSecret, long skewMillis)
     {
@@ -132,10 +136,18 @@ public class PeerCreds extends ServiceCreds
      * Computes the HMAC-SHA256 of {@code nodeName | nonce | timestamp} keyed by the shared secret.
      * Each variable-length component is length-prefixed so that distinct inputs cannot produce the
      * same signed message.
+     *
+     * @throws IllegalArgumentException if {@code sharedSecret} is null or empty. The
+     * {@link com.threerings.presents.peer.server.PeerManager}-validated path never passes one, but
+     * the constructor and {@link #verify} are public; without this guard an empty secret would
+     * surface as an undocumented unchecked exception from {@link SecretKeySpec}'s internals.
      */
     protected static byte[] computeHMAC (
         String nodeName, byte[] nonce, long timestamp, String sharedSecret)
     {
+        if (sharedSecret == null || sharedSecret.isEmpty()) {
+            throw new IllegalArgumentException("Peer shared secret must be non-empty");
+        }
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(new SecretKeySpec(bytes(sharedSecret), HMAC_ALGORITHM));
@@ -147,8 +159,8 @@ public class PeerCreds extends ServiceCreds
             mac.update(longToBytes(timestamp));
             return mac.doFinal();
         } catch (GeneralSecurityException gse) {
-            // HmacSHA256 is a required JCA algorithm and the key is non-empty when peering is
-            // properly configured, so this indicates a broken JVM/config, not a runtime condition.
+            // HmacSHA256 is a required JCA algorithm and the key is guaranteed non-empty above,
+            // so this indicates a broken JVM/config, not a runtime condition.
             throw new IllegalStateException("Unable to compute peer auth HMAC", gse);
         }
     }
