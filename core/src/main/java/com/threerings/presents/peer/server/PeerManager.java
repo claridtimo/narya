@@ -81,6 +81,10 @@ import static com.threerings.presents.Log.log;
 public abstract class PeerManager
     implements PeerProvider, ClientManager.ClientObserver, Lifecycle.ShutdownComponent
 {
+    /** The minimum acceptable length of the peer shared secret. Peering will refuse to start with
+     * a shorter (or null/empty) secret; see {@link #checkPeerSecret}. */
+    public static final int MIN_SHARED_SECRET_LENGTH = 16;
+
     /**
      * Used by entities that wish to know when cached data has become stale due to a change on
      * one of our peer servers.
@@ -332,10 +336,20 @@ public abstract class PeerManager
         String nodeName, String sharedSecret, String hostName, String publicHostName,
         String region, int port, String nodeNamespace, boolean adHoc)
     {
+        // fail fast if peering is being enabled with a weak or missing shared secret; peer
+        // authentication is only as strong as this secret (see checkPeerSecret)
+        checkPeerSecret(sharedSecret);
+
         _nodeName = nodeName;
         _sharedSecret = sharedSecret;
         _nodeNamespace = nodeNamespace;
         _adHoc = adHoc;
+        // A token stamped at T is accepted by verify() for any verifier-clock in the *inclusive*
+        // window [T - skew, T + skew], so its maximum lifetime is 2*skew. We must remember its
+        // nonce for strictly longer than that, otherwise a nonce first seen at T - skew would be
+        // pruned at exactly T + skew — the last instant the token still verifies — letting a
+        // single replay through. The +1ms margin makes the retention strictly exceed max validity.
+        _nonceCache = new PeerNonceCache(2 * _peerAuthSkewMillis + 1);
 
         // wire ourselves into the server
         _conmgr.addChainedAuthenticator(
@@ -386,11 +400,48 @@ public abstract class PeerManager
     }
 
     /**
-     * Returns true if the supplied peer credentials match our shared secret.
+     * Returns true if the supplied peer credentials are authentic: their nonce'd HMAC verifies
+     * against our shared secret within the freshness window, and their nonce has not already been
+     * used within that window (replay protection).
      */
     public boolean isAuthenticPeer (PeerCreds creds)
     {
-        return creds.areValid(_sharedSecret);
+        return isAuthenticPeer(
+            creds, _sharedSecret, _peerAuthSkewMillis, _nonceCache, System.currentTimeMillis());
+    }
+
+    /**
+     * The workhorse behind {@link #isAuthenticPeer(PeerCreds)}, factored out (with explicit
+     * collaborators and clock) so its ordering guarantee can be unit tested. The HMAC/freshness
+     * check runs <em>first</em> so that a bogus request cannot cause us to record (and thus spend
+     * memory on, or later falsely reject) an attacker-chosen nonce; only credentials that verify
+     * consume their nonce.
+     */
+    protected static boolean isAuthenticPeer (
+        PeerCreds creds, String sharedSecret, long skewMillis, PeerNonceCache nonceCache, long now)
+    {
+        return creds.verify(sharedSecret, skewMillis) &&
+            nonceCache.noteNonce(creds.clientId, creds.nonce, now);
+    }
+
+    /**
+     * Validates the shared secret used to authenticate peers, throwing
+     * {@link IllegalArgumentException} if it is null, empty or shorter than
+     * {@link #MIN_SHARED_SECRET_LENGTH}. Peer authentication is only as strong as this secret, so
+     * we refuse to enable peering with a weak one rather than fail open.
+     *
+     * <p>Note: in bang-game (and other consumers) this secret comes from {@code server_secret} in
+     * server.properties; this is a library backstop, and callers are also encouraged to validate
+     * their configuration up front.
+     */
+    protected static void checkPeerSecret (String sharedSecret)
+    {
+        if (sharedSecret == null || sharedSecret.length() < MIN_SHARED_SECRET_LENGTH) {
+            String msg = "Refusing to enable peering with a weak or missing shared secret; it " +
+                "must be at least " + MIN_SHARED_SECRET_LENGTH + " characters.";
+            log.error(msg, "length", (sharedSecret == null) ? -1 : sharedSecret.length());
+            throw new IllegalArgumentException(msg);
+        }
     }
 
     /**
@@ -1833,6 +1884,12 @@ public abstract class PeerManager
     protected String _nodeName;
     protected String _sharedSecret;
     protected NodeRecord _self;
+
+    /** The permitted clock skew (plus or minus) when verifying peer credential timestamps. */
+    protected long _peerAuthSkewMillis = PeerCreds.DEFAULT_SKEW_MILLIS;
+
+    /** Rejects reuse of a peer authentication nonce within the freshness window. */
+    protected PeerNonceCache _nonceCache;
 
     /** TLS context peer nodes use when connecting to other nodes, or null for plaintext peering. */
     protected javax.net.ssl.SSLContext _peerClientContext;
