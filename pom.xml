@@ -5,7 +5,7 @@
   <groupId>com.threerings</groupId>
   <artifactId>narya-parent</artifactId>
   <packaging>pom</packaging>
-  <version>1.22</version>
+  <version>1.23</version>
 
   <name>Narya Parent</name>
   <description>Facilities for making networked multiplayer games.</description>
